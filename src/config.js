@@ -12,7 +12,9 @@ export function getProviderConfig(env = process.env) {
     valhallaBaseUrl: env.VALHALLA_BASE_URL?.replace(/\/$/, ""),
     azureSpeechKey: env.AZURE_SPEECH_KEY,
     azureSpeechRegion: env.AZURE_SPEECH_REGION,
-    azureSpeechVoice: env.AZURE_SPEECH_VOICE ?? "pt-BR-FranciscaNeural"
+    azureSpeechVoice: env.AZURE_SPEECH_VOICE ?? "pt-BR-FranciscaNeural",
+    grokApiKey: env.XAI_API_KEY,
+    grokModel: env.XAI_MODEL ?? "grok-4.5"
   };
 }
 

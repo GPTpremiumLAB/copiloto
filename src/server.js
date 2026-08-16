@@ -21,6 +21,7 @@ const staticFiles = new Map([
   ["/styles.css", ["styles.css", "text/css; charset=utf-8"]],
   ["/premium.css", ["premium.css", "text/css; charset=utf-8"]],
   ["/voice-setup.html", ["voice-setup.html", "text/html; charset=utf-8"]],
+  ["/grok-setup.html", ["grok-setup.html", "text/html; charset=utf-8"]],
   ["/testadores", ["testadores.html", "text/html; charset=utf-8"]],
   ["/assets/rota-inteligente-logo.png", ["assets/rota-inteligente-logo.png", "image/png"]]
 ]);
@@ -126,6 +127,49 @@ async function saveAzureSpeechConfig(key, region) {
   Object.assign(config, { azureSpeechKey: key, azureSpeechRegion: region, azureSpeechVoice: values.AZURE_SPEECH_VOICE });
 }
 
+async function saveGrokConfig(key, model) {
+  let contents = "";
+  try { contents = await readFile(envFile, "utf8"); }
+  catch (error) { if (error?.code !== "ENOENT") throw error; }
+  const values = { XAI_API_KEY: key, XAI_MODEL: model };
+  for (const [name, value] of Object.entries(values)) {
+    const line = `${name}=${value}`;
+    const pattern = new RegExp(`^${name}=.*$`, "m");
+    contents = pattern.test(contents) ? contents.replace(pattern, line) : `${contents.trimEnd()}${contents.trim() ? "\n" : ""}${line}\n`;
+  }
+  await writeFile(envFile, contents, { encoding: "utf8", mode: 0o600 });
+  Object.assign(config, { grokApiKey: key, grokModel: model });
+}
+
+async function askGrok(messages, context = {}, conversationId = "") {
+  if (!config.grokApiKey) throw new Error("Grok ainda não está configurado");
+  const system = "Você é o Copiloto, assistente brasileiro de viagens de carro e moto. Responda em português do Brasil, de forma natural, útil e breve para ser ouvida durante uma viagem. Pode usar humor leve ocasionalmente. Nunca invente trânsito, acidentes, limites, estabelecimentos ou localização em tempo real. Use somente o contexto fornecido para dados atuais. Não incentive interação manual enquanto o veículo estiver em movimento. Para mudanças de destino, peça confirmação clara antes de afirmar que a rota será alterada.";
+  const response = await fetch("https://api.x.ai/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${config.grokApiKey}`,
+      "content-type": "application/json",
+      ...(conversationId ? { "x-grok-conv-id": conversationId } : {})
+    },
+    body: JSON.stringify({
+      model: config.grokModel,
+      messages: [
+        { role: "system", content: system },
+        { role: "system", content: `Contexto atual do aplicativo: ${JSON.stringify(context)}` },
+        ...messages
+      ],
+      temperature: 0.6,
+      max_tokens: 220
+    }),
+    signal: AbortSignal.timeout(20_000)
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data?.error?.message ?? `Grok indisponível (${response.status})`);
+  const reply = data?.choices?.[0]?.message?.content?.trim();
+  if (!reply) throw new Error("Grok não retornou uma resposta");
+  return reply;
+}
+
 export const server = http.createServer(async (req, res) => {
   const pathname = new URL(req.url, "http://localhost").pathname;
 
@@ -146,6 +190,21 @@ export const server = http.createServer(async (req, res) => {
     } catch (error) {
       sendJson(res, 400, { error: error.message });
     }
+    return;
+  }
+
+  if (req.method === "POST" && pathname === "/local/setup/grok") {
+    const remoteAddress = req.socket.remoteAddress ?? "";
+    const localRequest = remoteAddress === "127.0.0.1" || remoteAddress === "::1" || remoteAddress === "::ffff:127.0.0.1";
+    if (!localRequest || config.grokApiKey) { sendJson(res, 403, { error: "configuração local indisponível" }); return; }
+    try {
+      const request = await readJson(req);
+      const key = typeof request.key === "string" ? request.key.trim() : "";
+      const model = typeof request.model === "string" ? request.model.trim() : "grok-4.5";
+      if (key.length < 20 || !/^grok-[a-z0-9.-]+$/i.test(model)) throw new Error("configuração do Grok inválida");
+      await saveGrokConfig(key, model);
+      sendJson(res, 200, { configured: true, provider: "xAI", model });
+    } catch (error) { sendJson(res, 400, { error: error.message }); }
     return;
   }
 
@@ -253,6 +312,21 @@ export const server = http.createServer(async (req, res) => {
     } catch (error) {
       sendJson(res, 503, { error: error.message });
     }
+    return;
+  }
+
+  if (req.method === "POST" && pathname === "/v1/assistant/chat") {
+    try {
+      const request = await readJson(req);
+      const messages = Array.isArray(request.messages) ? request.messages.slice(-10).map((message) => ({
+        role: message?.role === "assistant" ? "assistant" : "user",
+        content: String(message?.content ?? "").slice(0, 1500)
+      })).filter((message) => message.content.trim()) : [];
+      if (!messages.length) throw new Error("mensagem obrigatória");
+      const context = request.context && typeof request.context === "object" ? request.context : {};
+      const conversationId = typeof request.conversationId === "string" && /^[a-zA-Z0-9_-]{8,80}$/.test(request.conversationId) ? request.conversationId : "";
+      sendJson(res, 200, { reply: await askGrok(messages, context, conversationId), provider: "xAI", model: config.grokModel });
+    } catch (error) { sendJson(res, 503, { error: error.message }); }
     return;
   }
 

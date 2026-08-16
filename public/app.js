@@ -643,6 +643,32 @@ async function handleNavigationRequest(text) {
   return true;
 }
 
+const grokConversationId = (crypto.randomUUID?.() ?? `copiloto_${Date.now()}`).replace(/[^a-zA-Z0-9_-]/g, "");
+const grokHistory = [];
+
+async function askGrok(text) {
+  grokHistory.push({ role: "user", content: text });
+  const response = await fetch("/v1/assistant/chat", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      conversationId: grokConversationId,
+      messages: grokHistory.slice(-10),
+      context: {
+        speedKmh: field("currentSpeed").textContent,
+        roadLimitKmh: field("roadSpeed").textContent,
+        tracking: trackingWatchId != null,
+        hasRoute: Boolean(lastPayload),
+        vehicle: form.elements.vehicle.value
+      }
+    })
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error ?? "O Grok não conseguiu responder agora.");
+  grokHistory.push({ role: "assistant", content: data.reply });
+  return data.reply;
+}
+
 field("chatForm").addEventListener("submit", async (event) => {
   event.preventDefault();
   const text = field("chatInput").value.trim();
@@ -665,7 +691,8 @@ field("chatForm").addEventListener("submit", async (event) => {
   } else if (/velocidade|limite/.test(text.toLocaleLowerCase("pt-BR"))) {
     addChatMessage("assistant", `Velocidade atual: ${field("currentSpeed").textContent} km/h. Limite informado da via: ${field("roadSpeed").textContent} km/h.`);
   } else {
-    addChatMessage("assistant", `Posso verificar trânsito, encontrar restaurantes e outros lugares, traçar uma nova rota ou informar a velocidade.${occasionalHumor()}`);
+    try { addChatMessage("assistant", await askGrok(text)); }
+    catch (error) { addChatMessage("assistant", error.message); }
   }
 });
 
@@ -820,7 +847,8 @@ async function applyVoiceCommand(transcript) {
     voiceReply(`Sua velocidade indicada é ${field("currentSpeed").textContent} quilômetros por hora. O limite informado é ${field("roadSpeed").textContent}.`);
     return;
   }
-  voiceReply("Eu ouvi você, mas ainda não entendi a ação. Tente dizer: me leve a um restaurante, encontre um bar ou trace uma rota para a Base Naval.");
+  try { voiceReply(await askGrok(command)); }
+  catch (error) { voiceReply(error.message); }
 }
 
 function startListening() {
