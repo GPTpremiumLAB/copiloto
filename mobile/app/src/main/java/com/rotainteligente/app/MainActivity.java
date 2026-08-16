@@ -12,6 +12,7 @@ import android.location.LocationListener;
 import android.location.LocationManager;
 import android.net.Uri;
 import android.os.Bundle;
+import android.provider.Settings;
 import android.speech.RecognitionListener;
 import android.speech.RecognizerIntent;
 import android.speech.SpeechRecognizer;
@@ -31,6 +32,7 @@ import java.util.Locale;
 
 public class MainActivity extends Activity implements LocationListener {
     private static final int PERMISSIONS = 20;
+    private static final int OVERLAY_PERMISSION = 21;
     private final int black = Color.rgb(17,17,17), beige = Color.rgb(216,199,165), white = Color.rgb(245,245,242), gray = Color.rgb(38,38,38);
     private TextView speed, assistant, listening;
     private EditText destination;
@@ -47,6 +49,7 @@ public class MainActivity extends Activity implements LocationListener {
         requestPermissionsIfNeeded();
         setupVoice();
         showOnExternalDisplay();
+        ensureOverlayPermission();
     }
 
     private View buildPanel(boolean external) {
@@ -92,6 +95,28 @@ public class MainActivity extends Activity implements LocationListener {
     }
 
     private void startListening() { Intent i=new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH); i.putExtra(RecognizerIntent.EXTRA_LANGUAGE,"pt-BR"); i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,RecognizerIntent.LANGUAGE_MODEL_FREE_FORM); i.putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE,true); recognizer.startListening(i); }
+
+    private void ensureOverlayPermission() {
+        if (!Settings.canDrawOverlays(this)) {
+            Toast.makeText(this, "Autorize a bolha do Copiloto para conversar sobre o mapa", Toast.LENGTH_LONG).show();
+            Intent intent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + getPackageName()));
+            startActivityForResult(intent, OVERLAY_PERMISSION);
+        } else startOverlay();
+    }
+
+    private void startOverlay() {
+        if (!Settings.canDrawOverlays(this)) return;
+        Intent service = new Intent(this, OverlayService.class);
+        if (android.os.Build.VERSION.SDK_INT >= 26) startForegroundService(service); else startService(service);
+    }
+
+    @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == OVERLAY_PERMISSION) {
+            if (Settings.canDrawOverlays(this)) startOverlay();
+            else Toast.makeText(this, "Sem essa permissão, o Copiloto não aparece sobre o mapa", Toast.LENGTH_LONG).show();
+        }
+    }
     private void handleSpeech(String phrase) {
         String lower=phrase.toLowerCase(Locale.ROOT); assistant.setText("Você: "+phrase);
         String target=phrase.replaceFirst("(?i).*(me leve|ir|rota|navegar|destino|até|para)\\s+(para\\s+)?","").trim();
@@ -103,6 +128,7 @@ public class MainActivity extends Activity implements LocationListener {
 
     private void openMaps(boolean waze) {
         String target=destination.getText().toString().trim(); if(target.isEmpty()){ Toast.makeText(this,"Informe ou fale um destino",Toast.LENGTH_SHORT).show(); return; }
+        startOverlay();
         Uri uri=waze?Uri.parse("https://waze.com/ul?q="+Uri.encode(target)+"&navigate=yes"):Uri.parse("google.navigation:q="+Uri.encode(target));
         Intent i=new Intent(Intent.ACTION_VIEW,uri); if(waze)i.setPackage("com.waze"); else i.setPackage("com.google.android.apps.maps");
         try{startActivity(i);}catch(Exception e){startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse("https://www.google.com/maps/dir/?api=1&destination="+Uri.encode(target))));}
