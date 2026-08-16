@@ -2,7 +2,7 @@ import http from "node:http";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { recommendRoute } from "./recommender.js";
 import { getProviderConfig, loadLocalEnv } from "./config.js";
 import { fetchProviderRoutes } from "./providers/index.js";
@@ -44,6 +44,28 @@ function safeEqual(left = "", right = "") {
   const a = Buffer.from(left);
   const b = Buffer.from(right);
   return a.length === b.length && timingSafeEqual(a, b);
+}
+
+function testerAccounts() {
+  try {
+    const accounts = JSON.parse(process.env.TESTER_ACCOUNTS_JSON ?? "[]");
+    return Array.isArray(accounts) ? accounts : [];
+  } catch {
+    return [];
+  }
+}
+
+function authenticateCredentials(username = "", password = "") {
+  if (safeEqual(username, process.env.AUTH_USERNAME) && safeEqual(password, process.env.AUTH_PASSWORD)) {
+    return { username, role: "admin" };
+  }
+  const passwordHash = createHash("sha256").update(password).digest("hex");
+  const account = testerAccounts().find((candidate) =>
+    safeEqual(username, candidate.username) &&
+    safeEqual(passwordHash, candidate.passwordHash) &&
+    (!candidate.expiresAt || Date.parse(candidate.expiresAt) > Date.now())
+  );
+  return account ? { username: account.username, role: "tester" } : null;
 }
 
 function sendJson(res, statusCode, value) {
@@ -153,7 +175,8 @@ export const server = http.createServer(async (req, res) => {
         return;
       }
       const credentials = await readJson(req);
-      if (!safeEqual(credentials.username, process.env.AUTH_USERNAME) || !safeEqual(credentials.password, process.env.AUTH_PASSWORD)) {
+      const identity = authenticateCredentials(credentials.username, credentials.password);
+      if (!identity) {
         attempt.count += 1;
         if (attempt.count >= 5) Object.assign(attempt, { count: 0, blockedUntil: Date.now() + 60_000 });
         loginAttempts.set(client, attempt);
@@ -163,7 +186,7 @@ export const server = http.createServer(async (req, res) => {
       loginAttempts.delete(client);
       const token = randomBytes(32).toString("base64url");
       const maxAge = Math.max(1, Number(process.env.SESSION_HOURS ?? 12)) * 3600;
-      sessions.set(token, { username: credentials.username, expiresAt: Date.now() + maxAge * 1000 });
+      sessions.set(token, { ...identity, expiresAt: Date.now() + maxAge * 1000 });
       res.setHeader("set-cookie", `route_session=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAge}`);
       sendJson(res, 200, { authenticated: true });
     } catch (error) {
