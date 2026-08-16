@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#071814">
+  <title>Rota Inteligente</title>
+  <link rel="icon" href="/assets/rota-inteligente-logo.png">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/premium.css">
+</head>
+<body>
+  <section id="loginScreen" class="login-screen">
+    <div class="login-card"><img class="app-logo large" src="/assets/rota-inteligente-logo.png" alt="Rota Inteligente"><p class="eyebrow">ETAPA 01 · ACESSO</p><h1>Bem-vindo de volta.</h1><p>Entre para acessar suas rotas e lugares salvos.</p><form id="loginForm"><label>Usuário<input id="loginUsername" autocomplete="username" required></label><label>Senha<input id="loginPassword" type="password" autocomplete="current-password" required></label><button type="submit">Entrar <b>→</b></button><p id="loginError" class="login-error" role="alert"></p></form></div>
+  </section>
+  <main id="appShell" class="shell" hidden>
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="Rota Inteligente">
+        <img class="app-logo" src="/assets/rota-inteligente-logo.png" alt="">
+        <span>ROTA <b>INTELIGENTE</b></span>
+      </a>
+      <div class="header-actions"><button id="voiceButton" class="voice-button" type="button" aria-pressed="false"><span>●</span> Microfone</button><div class="system-status"><i></i><span id="systemStatus">Verificando sistema</span></div><button id="logoutButton" class="logout-button" type="button">Sair</button></div>
+    </header>
+
+    <nav class="stage-nav" aria-label="Etapas"><span class="done">01 <b>Acesso</b></span><span id="stagePlan" class="active">02 <b>Planejar</b></span><span id="stageJourney">03 <b>Em viagem</b></span></nav>
+
+    <section class="hero">
+      <div>
+        <p class="eyebrow">ASSISTENTE DE TRAJETO</p>
+        <h1>O melhor caminho,<br><em>antes do trânsito mudar.</em></h1>
+        <p class="intro">Compare rotas de diferentes fontes e receba uma recomendação clara para carro ou motocicleta.</p>
+      </div>
+      <div class="traffic-orb" aria-hidden="true"><span>IA</span></div>
+    </section>
+
+    <section id="voicePanel" class="voice-panel" hidden>
+      <div><p class="eyebrow">COMANDO DE VOZ</p><strong id="voiceStatus">Microfone pronto</strong><p id="voiceTranscript">Diga “Rota” para chamar o assistente, ou toque no microfone da conversa.</p></div>
+      <div class="voice-controls"><label><input type="radio" name="voiceMode" value="off"><span>Desligado</span></label><label><input type="radio" name="voiceMode" value="push" checked><span>Clicar para falar</span></label><label><input type="radio" name="voiceMode" value="always"><span>Sempre ativo · diga Rota</span></label><button id="talkButton" type="button">Falar agora</button></div>
+    </section>
+
+    <section class="planner">
+      <form id="routeForm" class="route-form">
+        <div class="form-heading">
+          <span>01</span>
+          <div><h2>Planeje seu trajeto</h2><p>Digite poucas palavras, escolha a sugestão e siga viagem.</p></div>
+        </div>
+
+        <div class="location-grid address-grid">
+          <fieldset class="address-field">
+            <legend>DE ONDE VOCÊ SAI?</legend>
+            <label class="address-label">Local de partida<input id="originAddress" type="text" value="Pelourinho, Salvador" placeholder="Ex.: Casa, Pituba ou Avenida Sete" autocomplete="off" required><input id="originLat" type="hidden" value="-12.9711"><input id="originLng" type="hidden" value="-38.5108"></label>
+            <div id="originSuggestions" class="suggestions" hidden></div>
+            <button type="button" class="text-button" id="useLocation">Usar minha localização atual</button>
+          </fieldset>
+          <div class="route-line" aria-hidden="true"><i></i><span></span><i></i></div>
+          <fieldset class="address-field">
+            <legend>PARA ONDE VOCÊ VAI?</legend>
+            <label class="address-label">Destino<input id="destinationAddress" type="text" value="Farol da Barra, Salvador" placeholder="Ex.: Trabalho, Barra ou Shopping da Bahia" autocomplete="off" required><input id="destinationLat" type="hidden" value="-13.0101"><input id="destinationLng" type="hidden" value="-38.5328"></label>
+            <div id="destinationSuggestions" class="suggestions" hidden></div>
+            <button type="button" class="text-button" id="swapLocations">Inverter pontos</button>
+          </fieldset>
+        </div>
+
+        <div class="saved-places"><span>MEUS LUGARES</span><div id="savedPlaces"><button type="button" class="saved-empty" disabled>Salve destinos como Casa ou Trabalho</button></div></div>
+
+        <div class="options-row">
+          <div class="vehicle-picker" role="group" aria-label="Veículo">
+            <label><input type="radio" name="vehicle" value="car" checked><span>CARRO</span></label>
+            <label><input type="radio" name="vehicle" value="motorcycle"><span>MOTO</span></label>
+          </div>
+          <label class="check"><input id="avoidTolls" type="checkbox"><span></span>Evitar pedágios</label>
+          <label class="check"><input id="simpleRoute" type="checkbox"><span></span>Preferir caminho simples</label>
+          <button class="submit" type="submit"><span>Comparar rotas</span><b>→</b></button>
+        </div>
+      </form>
+    </section>
+
+    <section id="results" class="results" hidden aria-live="polite">
+      <div class="results-heading"><div><p class="eyebrow">ANÁLISE CONCLUÍDA</p><h2>Recomendação da IA</h2></div><div class="result-actions"><time id="resultTime"></time><button id="exitJourney" type="button" hidden>Encerrar tela de viagem</button></div></div>
+      <article id="recommended" class="recommended"></article>
+      <section class="journey-dashboard">
+        <div class="journey-stat"><span>VELOCIDADE ATUAL</span><strong id="currentSpeed">—</strong><small>km/h</small></div>
+        <div class="journey-stat"><span>LIMITE DA VIA</span><strong id="roadSpeed">—</strong><small>km/h</small></div>
+        <div class="journey-stat"><span>TRÂNSITO</span><strong id="trafficState">Aguardando</strong><small id="trafficDetail">inicie o rastreio</small></div>
+        <div class="journey-stat signal-stat"><span>PRÓXIMO SEMÁFORO</span><strong id="signalState">Aguardando</strong><small id="signalDetail">consultando Salvador e Feira</small></div>
+        <button id="trackingButton" class="tracking-button" type="button">Iniciar viagem e rastreio</button>
+      </section>
+      <div class="map-layout">
+        <div id="routeMap" class="route-map" aria-label="Prévia visual da rota"></div>
+        <aside class="navigation-card"><p class="eyebrow">PRÓXIMA ORIENTAÇÃO</p><h3 id="nextInstruction">Rota pronta</h3><p id="nextInstructionDistance">Inicie a viagem para receber avisos por voz.</p><button id="mapOrientation" class="save-place" type="button">↑ Direção para cima</button><button id="saveDestination" class="save-place" type="button">☆ Salvar este destino</button><a id="openWaze" class="nav-link dark" target="_blank" rel="noopener">Abrir no Waze <b>↗</b></a><a id="openGoogle" class="nav-link light" target="_blank" rel="noopener">Abrir no Google Maps <b>↗</b></a></aside>
+      </div>
+      <section id="nearbyPlaces" class="nearby-places"><div><p class="eyebrow">PERTO DO SEU CAMINHO</p><h3>Lugares que podem valer uma parada</h3></div><div id="nearbyPlaceList" class="nearby-place-list"><p>As sugestões aparecerão ao iniciar a viagem.</p></div></section>
+      <div><h3 class="alternatives-title">Outras alternativas</h3><div id="alternatives" class="alternative-grid"></div></div>
+      <div id="providers" class="providers"></div>
+      <section class="chat-card"><div class="chat-heading"><div><p class="eyebrow">ASSISTENTE EM TEMPO REAL</p><h3>Converse durante o trajeto</h3></div><span id="chatLive">Aguardando viagem</span></div><div id="chatMessages" class="chat-messages"><div class="message assistant">Toque no microfone e fale comigo. Posso procurar lugares, explicar a rota e verificar o trânsito.</div></div><form id="chatForm" class="chat-form"><input id="chatInput" placeholder="Fale ou escreva sua pergunta" autocomplete="off"><button id="chatMicButton" class="chat-mic-button" type="button" aria-label="Falar com o assistente" aria-pressed="false">●</button><button type="submit">Enviar</button></form></section>
+    </section>
+
+    <section id="emptyState" class="empty-state">
+      <span>↗</span><p>As rotas comparadas aparecerão aqui.</p>
+    </section>
+  </main>
+  <div id="toast" class="toast" role="alert" hidden></div>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

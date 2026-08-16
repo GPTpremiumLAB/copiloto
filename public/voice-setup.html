@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Configurar voz neural</title>
+  <style>
+    body{font-family:Arial,sans-serif;background:#111;color:#f4efe5;display:grid;place-items:center;min-height:100vh;margin:0}
+    form{width:min(420px,calc(100% - 40px));background:#202020;border:1px solid #777;padding:28px;border-radius:18px}
+    label{display:block;margin:16px 0 7px}input,button{box-sizing:border-box;width:100%;padding:13px;border-radius:10px;border:1px solid #888;font:inherit}
+    button{margin-top:20px;background:#d8c7a5;color:#111;font-weight:700;cursor:pointer}.ok{color:#b8e0b0}.erro{color:#ffb4ab}
+  </style>
+</head>
+<body>
+  <form id="voiceForm">
+    <h1>Voz neural</h1>
+    <p>A chave fica apenas no servidor local. A voz do dispositivo continua como reserva.</p>
+    <label for="key">Chave do Azure</label>
+    <input id="key" type="password" autocomplete="off" required>
+    <label for="region">Região</label>
+    <input id="region" value="brazilsouth" required>
+    <button type="submit">Salvar configuração</button>
+    <p id="status" aria-live="polite"></p>
+  </form>
+  <script>
+    voiceForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      status.textContent = "Salvando com segurança...";
+      const response = await fetch("/v1/admin/voice", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ key: key.value, region: region.value }) });
+      const data = await response.json();
+      status.className = response.ok ? "ok" : "erro";
+      status.textContent = response.ok ? "Voz neural configurada com sucesso." : (data.error || "Não foi possível salvar.");
+      if (response.ok) key.value = "";
+    });
+  </script>
+</body>
+</html>

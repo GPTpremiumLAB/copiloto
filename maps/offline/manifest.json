@@ -1,0 +1,12 @@
+{
+  "region": "Bahia, Brasil",
+  "source": "OpenStreetMap France",
+  "sourceUrl": "https://download.openstreetmap.fr/extracts/south-america/brazil/northeast/bahia-latest.osm.pbf",
+  "dataDate": "2026-08-13",
+  "downloadedAtUtc": "2026-08-14T20:04:29.9525882Z",
+  "file": "bahia-latest.osm.pbf",
+  "bytes": 129703960,
+  "sha256": "32752950BFB3C2888FAA8B8D250E206B13995D4ABA40753889971C53BF2B5FBC",
+  "license": "Open Database License (ODbL)",
+  "attribution": "© OpenStreetMap contributors"
+}

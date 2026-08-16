@@ -1,0 +1,10 @@
+.env
+node_modules/
+coverage/
+maps/offline/*.osm.pbf
+.android-tools/
+.gradle/
+mobile/.gradle/
+mobile/**/build/
+*.apk
+local.properties
