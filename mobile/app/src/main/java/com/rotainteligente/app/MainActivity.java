@@ -55,7 +55,7 @@ public class MainActivity extends Activity implements LocationListener {
     private View buildPanel(boolean external) {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL); root.setPadding(28,28,28,28); root.setBackgroundColor(black); root.setGravity(Gravity.CENTER_HORIZONTAL);
-        TextView brand = label("ROTA INTELIGENTE", 25, beige); brand.setGravity(Gravity.CENTER); root.addView(brand, matchWrap());
+        TextView brand = label("COPILOTO", 25, beige); brand.setGravity(Gravity.CENTER); root.addView(brand, matchWrap());
         TextView subtitle = label(external ? "Painel da viagem" : "Seu copiloto de voz", 14, white); subtitle.setGravity(Gravity.CENTER); root.addView(subtitle, matchWrap());
         speed = label("0 km/h", external ? 64 : 48, white); speed.setGravity(Gravity.CENTER); speed.setPadding(0,34,0,24); root.addView(speed, matchWrap());
         assistant = label("Diga para onde deseja ir ou toque no microfone.", 18, white); assistant.setBackgroundColor(gray); assistant.setPadding(22,22,22,22); root.addView(assistant, matchWrap());
