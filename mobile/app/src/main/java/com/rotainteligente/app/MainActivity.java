@@ -17,22 +17,29 @@ import android.speech.RecognitionListener;
 import android.speech.RecognizerIntent;
 import android.speech.SpeechRecognizer;
 import android.speech.tts.TextToSpeech;
+import android.text.InputType;
 import android.view.Display;
 import android.view.Gravity;
 import android.view.View;
 import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
 import java.util.ArrayList;
 import java.util.Locale;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 
 public class MainActivity extends Activity implements LocationListener {
     private static final int PERMISSIONS = 20;
     private static final int OVERLAY_PERMISSION = 21;
+    private static final String TESTER_USERNAME = "Desenvolvedor";
+    private static final String TESTER_PASSWORD_HASH = "a6d13f3998c4b163c7dd1bf3051dd1a593f4c1b3b83dcde6ff32c91fd3e3cbe6";
+    private static final long TESTER_EXPIRES_AT = 1787453999000L;
     private final int black = Color.rgb(17,17,17), beige = Color.rgb(216,199,165), white = Color.rgb(245,245,242), gray = Color.rgb(38,38,38);
     private TextView speed, assistant, listening;
     private EditText destination;
@@ -44,12 +51,45 @@ public class MainActivity extends Activity implements LocationListener {
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
+        boolean session = getPreferences(MODE_PRIVATE).getBoolean("tester_authenticated", false);
+        if (session && System.currentTimeMillis() < TESTER_EXPIRES_AT) showCopilot(); else setContentView(buildLogin());
+    }
+
+    private void showCopilot() {
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         setContentView(buildPanel(false));
         requestPermissionsIfNeeded();
         setupVoice();
         showOnExternalDisplay();
         ensureOverlayPermission();
+    }
+
+    private View buildLogin() {
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL); root.setPadding(48,48,48,48); root.setBackgroundColor(black); root.setGravity(Gravity.CENTER);
+        ImageView icon = new ImageView(this); icon.setImageResource(com.rotainteligente.app.R.drawable.ic_copiloto); root.addView(icon, new LinearLayout.LayoutParams(180,180));
+        TextView title = label("COPILOTO", 30, beige); title.setGravity(Gravity.CENTER); title.setPadding(0,18,0,4); root.addView(title, matchWrap());
+        TextView subtitle = label("Acesso ao programa de testes", 15, white); subtitle.setGravity(Gravity.CENTER); subtitle.setPadding(0,0,0,22); root.addView(subtitle, matchWrap());
+        EditText username = new EditText(this); username.setHint("Usuário"); username.setTextColor(white); username.setHintTextColor(Color.LTGRAY); username.setBackgroundColor(gray); username.setPadding(18,16,18,16); root.addView(username, matchWrap());
+        EditText password = new EditText(this); password.setHint("Senha temporária"); password.setTextColor(white); password.setHintTextColor(Color.LTGRAY); password.setBackgroundColor(gray); password.setPadding(18,16,18,16); password.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD); LinearLayout.LayoutParams passwordParams=matchWrap(); passwordParams.setMargins(0,14,0,0); root.addView(password,passwordParams);
+        TextView error = label("", 13, Color.rgb(230,170,150)); error.setPadding(0,12,0,0); root.addView(error, matchWrap());
+        Button enter = button("Entrar no Copiloto"); root.addView(enter, matchWrap());
+        enter.setOnClickListener(view -> {
+            if (System.currentTimeMillis() >= TESTER_EXPIRES_AT) { error.setText("Esta chave de teste expirou. Solicite uma nova credencial."); return; }
+            boolean validUser = TESTER_USERNAME.equals(username.getText().toString().trim());
+            boolean validPassword = TESTER_PASSWORD_HASH.equals(sha256(password.getText().toString()));
+            if (!validUser || !validPassword) { error.setText("Usuário ou senha inválidos."); password.setText(""); return; }
+            getPreferences(MODE_PRIVATE).edit().putBoolean("tester_authenticated", true).apply();
+            showCopilot();
+        });
+        return root;
+    }
+
+    private String sha256(String value) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8));
+            StringBuilder result = new StringBuilder(); for (byte item : digest) result.append(String.format("%02x", item)); return result.toString();
+        } catch (Exception error) { return ""; }
     }
 
     private View buildPanel(boolean external) {
