@@ -29,7 +29,7 @@ import java.util.Locale;
 
 public class OverlayService extends Service {
     private static final String CHANNEL = "copiloto_viagem";
-    private static final long RESPONSE_DELAY_MS = 1200;
+    private static final long RESPONSE_DELAY_MS = 1000;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private WindowManager windowManager;
     private WindowManager.LayoutParams params;
@@ -39,6 +39,8 @@ public class OverlayService extends Service {
     private boolean alwaysListening = true;
     private boolean listening;
     private boolean speaking;
+    private boolean ttsReady;
+    private String queuedReply;
     private String pendingDestination;
     private String pendingNearbySearch;
     private boolean awaitingCategory;
@@ -82,7 +84,8 @@ public class OverlayService extends Service {
             alwaysListening = !alwaysListening;
             paintBubble(alwaysListening);
             bubble.setContentDescription(alwaysListening ? "Copiloto com escuta contínua ligada" : "Copiloto pausado");
-            if (alwaysListening) scheduleListening(250); else { recognizer.cancel(); listening = false; }
+            if (alwaysListening) scheduleListening(250);
+            else { recognizer.cancel(); listening = false; }
         });
         bubble.setOnLongClickListener(view -> { stopSelf(); return true; });
         bubble.setOnTouchListener((view, event) -> {
@@ -109,14 +112,21 @@ public class OverlayService extends Service {
         tts = new TextToSpeech(this, result -> {
             if (result == TextToSpeech.SUCCESS) {
                 tts.setLanguage(new Locale("pt", "BR"));
+                ttsReady = true;
                 tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
                     public void onStart(String id) { speaking = true; }
                     public void onDone(String id) { speaking = false; scheduleListening(400); }
                     public void onError(String id) { speaking = false; scheduleListening(600); }
                 });
+                if (queuedReply != null) {
+                    String reply = queuedReply; queuedReply = null;
+                    handler.post(() -> speakNow(reply));
+                }
             }
         });
-        recognizer = SpeechRecognizer.createSpeechRecognizer(this);
+        if (android.os.Build.VERSION.SDK_INT >= 31 && SpeechRecognizer.isOnDeviceRecognitionAvailable(this))
+            recognizer = SpeechRecognizer.createOnDeviceSpeechRecognizer(this);
+        else recognizer = SpeechRecognizer.createSpeechRecognizer(this);
         recognizer.setRecognitionListener(new RecognitionListener() {
             public void onReadyForSpeech(Bundle b) { listening = true; }
             public void onResults(Bundle b) {
@@ -135,10 +145,13 @@ public class OverlayService extends Service {
         String lower = phrase.toLowerCase(Locale.ROOT).trim();
         if (lower.isEmpty()) { scheduleListening(300); return; }
         boolean wakeWord = lower.contains("copiloto");
-        if (lower.equals("cancelar") || lower.contains("cancela a rota")) {
+        if (!wakeWord) { scheduleListening(250); return; }
+        String command = phrase.replaceFirst("(?i).*?copiloto[,:]?\\s*", "").trim();
+        String normalized = command.toLowerCase(Locale.ROOT);
+        if (normalized.equals("cancelar") || normalized.contains("cancela a rota")) {
             pendingDestination = null; pendingNearbySearch = null; awaitingCategory = false; reply("Pedido cancelado."); return;
         }
-        boolean confirmed = lower.equals("confirmar") || lower.equals("confirma") || lower.contains("pode ir") || lower.contains("pode abrir");
+        boolean confirmed = normalized.equals("confirmar") || normalized.equals("confirma") || normalized.contains("pode ir") || normalized.contains("pode abrir");
         if (confirmed && pendingDestination != null) {
             String destination = pendingDestination; pendingDestination = null; pendingNearbySearch = null;
             reply("Abrindo a nova rota para " + destination + "."); openGoogleMaps(destination); return;
@@ -147,9 +160,6 @@ public class OverlayService extends Service {
             String query = pendingNearbySearch; pendingNearbySearch = null; pendingDestination = null;
             reply("Vou mostrar as opções próximas no mapa."); openNearbySearch(query); return;
         }
-        if (!wakeWord && !awaitingCategory) { scheduleListening(250); return; }
-        String command = wakeWord ? phrase.replaceFirst("(?i).*?copiloto[,:]?\\s*", "").trim() : phrase.trim();
-        String normalized = command.toLowerCase(Locale.ROOT);
         awaitingCategory = false;
         if (normalized.contains("onde comer") || normalized.contains("restaurante") || normalized.contains("comida") || normalized.contains("estou com fome") || normalized.contains("tô com fome")) {
             suggestNearby("restaurantes perto de mim", "Posso procurar restaurantes próximos. Diga confirmar ou cancelar."); return;
@@ -209,7 +219,13 @@ public class OverlayService extends Service {
 
     private void reply(String text) {
         recognizer.cancel(); listening = false; speaking = true;
-        tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "copiloto");
+        if (!ttsReady) { queuedReply = text; return; }
+        speakNow(text);
+    }
+
+    private void speakNow(String text) {
+        int result = tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "copiloto");
+        if (result == TextToSpeech.ERROR) { speaking = false; scheduleListening(700); }
     }
 
     private void startListening() {

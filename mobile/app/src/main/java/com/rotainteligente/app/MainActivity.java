@@ -6,12 +6,15 @@ import android.app.Presentation;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
+import android.graphics.drawable.GradientDrawable;
 import android.hardware.display.DisplayManager;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.provider.Settings;
 import android.speech.RecognitionListener;
 import android.speech.RecognizerIntent;
@@ -51,8 +54,23 @@ public class MainActivity extends Activity implements LocationListener {
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
+        setContentView(buildSplash());
+        new Handler(Looper.getMainLooper()).postDelayed(this::openInitialScreen, 1300);
+    }
+
+    private void openInitialScreen() {
         boolean session = getPreferences(MODE_PRIVATE).getBoolean("tester_authenticated", false);
         if (session && System.currentTimeMillis() < TESTER_EXPIRES_AT) showCopilot(); else setContentView(buildLogin());
+    }
+
+    private View buildSplash() {
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL); root.setPadding(dp(48),dp(48),dp(48),dp(48)); root.setBackgroundColor(black); root.setGravity(Gravity.CENTER);
+        ImageView icon = new ImageView(this); icon.setImageResource(com.rotainteligente.app.R.drawable.ic_copiloto); root.addView(icon, new LinearLayout.LayoutParams(dp(148),dp(148)));
+        TextView title = label("COPILOTO", 36, beige); title.setGravity(Gravity.CENTER); title.setPadding(0,dp(24),0,dp(8)); root.addView(title, matchWrap());
+        TextView subtitle = label("Sua viagem, em boa companhia.", 16, white); subtitle.setGravity(Gravity.CENTER); root.addView(subtitle, matchWrap());
+        TextView loading = label("PREPARANDO SUA ROTA", 10, Color.LTGRAY); loading.setGravity(Gravity.CENTER); loading.setPadding(0,dp(40),0,0); loading.setLetterSpacing(.18f); root.addView(loading, matchWrap());
+        return root;
     }
 
     private void showCopilot() {
@@ -66,12 +84,12 @@ public class MainActivity extends Activity implements LocationListener {
 
     private View buildLogin() {
         LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL); root.setPadding(48,48,48,48); root.setBackgroundColor(black); root.setGravity(Gravity.CENTER);
-        ImageView icon = new ImageView(this); icon.setImageResource(com.rotainteligente.app.R.drawable.ic_copiloto); root.addView(icon, new LinearLayout.LayoutParams(180,180));
+        root.setOrientation(LinearLayout.VERTICAL); root.setPadding(dp(34),dp(40),dp(34),dp(40)); root.setBackgroundColor(black); root.setGravity(Gravity.CENTER);
+        ImageView icon = new ImageView(this); icon.setImageResource(com.rotainteligente.app.R.drawable.ic_copiloto); root.addView(icon, new LinearLayout.LayoutParams(dp(132),dp(132)));
         TextView title = label("COPILOTO", 30, beige); title.setGravity(Gravity.CENTER); title.setPadding(0,18,0,4); root.addView(title, matchWrap());
         TextView subtitle = label("Acesso ao programa de testes", 15, white); subtitle.setGravity(Gravity.CENTER); subtitle.setPadding(0,0,0,22); root.addView(subtitle, matchWrap());
-        EditText username = new EditText(this); username.setHint("Usuário"); username.setTextColor(white); username.setHintTextColor(Color.LTGRAY); username.setBackgroundColor(gray); username.setPadding(18,16,18,16); root.addView(username, matchWrap());
-        EditText password = new EditText(this); password.setHint("Senha temporária"); password.setTextColor(white); password.setHintTextColor(Color.LTGRAY); password.setBackgroundColor(gray); password.setPadding(18,16,18,16); password.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD); LinearLayout.LayoutParams passwordParams=matchWrap(); passwordParams.setMargins(0,14,0,0); root.addView(password,passwordParams);
+        EditText username = new EditText(this); username.setHint("Usuário"); username.setTextColor(white); username.setHintTextColor(Color.LTGRAY); username.setBackground(rounded(gray,18)); username.setPadding(dp(18),dp(16),dp(18),dp(16)); root.addView(username, matchWrap());
+        EditText password = new EditText(this); password.setHint("Senha temporária"); password.setTextColor(white); password.setHintTextColor(Color.LTGRAY); password.setBackground(rounded(gray,18)); password.setPadding(dp(18),dp(16),dp(18),dp(16)); password.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD); LinearLayout.LayoutParams passwordParams=matchWrap(); passwordParams.setMargins(0,dp(14),0,0); root.addView(password,passwordParams);
         TextView error = label("", 13, Color.rgb(230,170,150)); error.setPadding(0,12,0,0); root.addView(error, matchWrap());
         Button enter = button("Entrar no Copiloto"); root.addView(enter, matchWrap());
         enter.setOnClickListener(view -> {
@@ -110,8 +128,10 @@ public class MainActivity extends Activity implements LocationListener {
     }
 
     private TextView label(String text, int size, int color) { TextView v = new TextView(this); v.setText(text); v.setTextSize(size); v.setTextColor(color); v.setFontFeatureSettings("kern"); return v; }
-    private Button button(String text) { Button b = new Button(this); b.setText(text); b.setTextSize(17); b.setTextColor(black); b.setBackgroundColor(beige); b.setAllCaps(false); LinearLayout.LayoutParams p=matchWrap(); p.setMargins(0,12,0,0); b.setLayoutParams(p); return b; }
+    private Button button(String text) { Button b = new Button(this); b.setText(text); b.setTextSize(17); b.setTextColor(black); b.setBackground(rounded(beige,18)); b.setAllCaps(false); LinearLayout.LayoutParams p=matchWrap(); p.setMargins(0,dp(12),0,0); b.setLayoutParams(p); return b; }
     private LinearLayout.LayoutParams matchWrap() { return new LinearLayout.LayoutParams(-1,-2); }
+    private GradientDrawable rounded(int color, int radiusDp) { GradientDrawable value=new GradientDrawable(); value.setColor(color); value.setCornerRadius(dp(radiusDp)); return value; }
+    private int dp(int value) { return Math.round(value * getResources().getDisplayMetrics().density); }
 
     private void requestPermissionsIfNeeded() {
         ArrayList<String> needed = new ArrayList<>();
