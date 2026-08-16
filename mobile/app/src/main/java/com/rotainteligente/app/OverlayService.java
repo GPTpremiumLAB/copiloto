@@ -40,6 +40,7 @@ public class OverlayService extends Service {
     private boolean listening;
     private boolean speaking;
     private boolean ttsReady;
+    private long conversationActiveUntil;
     private String queuedReply;
     private String pendingDestination;
     private String pendingNearbySearch;
@@ -74,7 +75,7 @@ public class OverlayService extends Service {
         bubble = new Button(this);
         bubble.setText("🎙"); bubble.setTextSize(27); bubble.setGravity(Gravity.CENTER); bubble.setPadding(0, 0, 0, 0);
         bubble.setContentDescription("Copiloto com escuta contínua ligada"); bubble.setElevation(dp(10));
-        paintBubble(true);
+        paintBubble("ready");
         params = new WindowManager.LayoutParams(dp(68), dp(68), WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS, PixelFormat.TRANSLUCENT);
         params.gravity = Gravity.TOP | Gravity.END; params.x = dp(16); params.y = dp(210);
@@ -82,7 +83,7 @@ public class OverlayService extends Service {
 
         bubble.setOnClickListener(view -> {
             alwaysListening = !alwaysListening;
-            paintBubble(alwaysListening);
+            paintBubble(alwaysListening ? "ready" : "paused");
             bubble.setContentDescription(alwaysListening ? "Copiloto com escuta contínua ligada" : "Copiloto pausado");
             if (alwaysListening) scheduleListening(250);
             else { recognizer.cancel(); listening = false; }
@@ -100,12 +101,17 @@ public class OverlayService extends Service {
         scheduleListening(700);
     }
 
-    private void paintBubble(boolean active) {
+    private void paintBubble(String state) {
         GradientDrawable background = new GradientDrawable();
         background.setShape(GradientDrawable.OVAL);
-        background.setColor(active ? Color.rgb(17, 17, 17) : Color.rgb(92, 92, 92));
-        background.setStroke(dp(4), active ? Color.rgb(216, 199, 165) : Color.LTGRAY);
-        bubble.setTextColor(Color.WHITE); bubble.setBackground(background);
+        int fill=Color.rgb(17,17,17), stroke=Color.rgb(216,199,165), text=Color.WHITE;
+        String icon="🎙";
+        if ("listening".equals(state)) { fill=Color.rgb(216,199,165); stroke=Color.WHITE; text=Color.BLACK; icon="●"; }
+        else if ("processing".equals(state)) { fill=Color.rgb(70,70,70); stroke=Color.rgb(216,199,165); icon="…"; }
+        else if ("speaking".equals(state)) { fill=Color.WHITE; stroke=Color.rgb(216,199,165); text=Color.BLACK; icon="◖"; }
+        else if ("paused".equals(state)) { fill=Color.rgb(92,92,92); stroke=Color.LTGRAY; icon="Ⅱ"; }
+        background.setColor(fill); background.setStroke(dp(4),stroke);
+        bubble.setText(icon); bubble.setTextColor(text); bubble.setBackground(background);
     }
 
     private void setupVoice() {
@@ -114,9 +120,9 @@ public class OverlayService extends Service {
                 tts.setLanguage(new Locale("pt", "BR"));
                 ttsReady = true;
                 tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
-                    public void onStart(String id) { speaking = true; }
-                    public void onDone(String id) { speaking = false; scheduleListening(400); }
-                    public void onError(String id) { speaking = false; scheduleListening(600); }
+                    public void onStart(String id) { speaking = true; handler.post(() -> paintBubble("speaking")); }
+                    public void onDone(String id) { speaking = false; handler.post(() -> paintBubble(alwaysListening?"ready":"paused")); scheduleListening(400); }
+                    public void onError(String id) { speaking = false; handler.post(() -> paintBubble(alwaysListening?"ready":"paused")); scheduleListening(600); }
                 });
                 if (queuedReply != null) {
                     String reply = queuedReply; queuedReply = null;
@@ -128,14 +134,15 @@ public class OverlayService extends Service {
             recognizer = SpeechRecognizer.createOnDeviceSpeechRecognizer(this);
         else recognizer = SpeechRecognizer.createSpeechRecognizer(this);
         recognizer.setRecognitionListener(new RecognitionListener() {
-            public void onReadyForSpeech(Bundle b) { listening = true; }
+            public void onReadyForSpeech(Bundle b) { listening = true; paintBubble("listening"); bubble.setContentDescription("Copiloto está ouvindo"); }
             public void onResults(Bundle b) {
                 listening = false;
+                paintBubble("processing"); bubble.setContentDescription("Copiloto está entendendo");
                 ArrayList<String> values = b.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
                 String phrase = values == null || values.isEmpty() ? "" : values.get(0);
                 handler.postDelayed(() -> handleSpeech(phrase), RESPONSE_DELAY_MS);
             }
-            public void onError(int error) { listening = false; scheduleListening(900); }
+            public void onError(int error) { listening = false; paintBubble(alwaysListening?"ready":"paused"); scheduleListening(900); }
             public void onBeginningOfSpeech() {} public void onRmsChanged(float rms) {} public void onBufferReceived(byte[] bytes) {}
             public void onEndOfSpeech() {} public void onPartialResults(Bundle b) {} public void onEvent(int type, Bundle b) {}
         });
@@ -145,8 +152,10 @@ public class OverlayService extends Service {
         String lower = phrase.toLowerCase(Locale.ROOT).trim();
         if (lower.isEmpty()) { scheduleListening(300); return; }
         boolean wakeWord = lower.contains("copiloto");
-        if (!wakeWord) { scheduleListening(250); return; }
-        String command = phrase.replaceFirst("(?i).*?copiloto[,:]?\\s*", "").trim();
+        boolean activeConversation = System.currentTimeMillis() < conversationActiveUntil;
+        if (!wakeWord && !activeConversation) { paintBubble("ready"); scheduleListening(250); return; }
+        if (wakeWord) conversationActiveUntil = System.currentTimeMillis() + 60000;
+        String command = wakeWord ? phrase.replaceFirst("(?i).*?copiloto[,:]?\\s*", "").trim() : phrase.trim();
         String normalized = command.toLowerCase(Locale.ROOT);
         if (normalized.equals("cancelar") || normalized.contains("cancela a rota")) {
             pendingDestination = null; pendingNearbySearch = null; awaitingCategory = false; reply("Pedido cancelado."); return;
@@ -219,13 +228,14 @@ public class OverlayService extends Service {
 
     private void reply(String text) {
         recognizer.cancel(); listening = false; speaking = true;
+        paintBubble("speaking"); bubble.setContentDescription("Copiloto está respondendo");
         if (!ttsReady) { queuedReply = text; return; }
         speakNow(text);
     }
 
     private void speakNow(String text) {
         int result = tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "copiloto");
-        if (result == TextToSpeech.ERROR) { speaking = false; scheduleListening(700); }
+        if (result == TextToSpeech.ERROR) { speaking = false; paintBubble(alwaysListening?"ready":"paused"); scheduleListening(700); }
     }
 
     private void startListening() {

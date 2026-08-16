@@ -11,6 +11,8 @@ import android.hardware.display.DisplayManager;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
+import android.location.Geocoder;
+import android.location.Address;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
@@ -21,6 +23,9 @@ import android.speech.RecognizerIntent;
 import android.speech.SpeechRecognizer;
 import android.speech.tts.TextToSpeech;
 import android.text.InputType;
+import android.text.Editable;
+import android.text.TextWatcher;
+import android.view.inputmethod.EditorInfo;
 import android.view.Display;
 import android.view.Gravity;
 import android.view.View;
@@ -34,6 +39,7 @@ import android.widget.Toast;
 
 import java.util.ArrayList;
 import java.util.Locale;
+import java.util.List;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 
@@ -44,8 +50,11 @@ public class MainActivity extends Activity implements LocationListener {
     private static final String TESTER_PASSWORD_HASH = "a6d13f3998c4b163c7dd1bf3051dd1a593f4c1b3b83dcde6ff32c91fd3e3cbe6";
     private static final long TESTER_EXPIRES_AT = 1787453999000L;
     private final int black = Color.rgb(17,17,17), beige = Color.rgb(216,199,165), white = Color.rgb(245,245,242), gray = Color.rgb(38,38,38);
-    private TextView speed, assistant, listening;
+    private TextView speed, assistant, listening, addressSuggestion;
     private EditText destination;
+    private Button micButton;
+    private final Handler uiHandler = new Handler(Looper.getMainLooper());
+    private Runnable pendingAddressLookup;
     private SpeechRecognizer recognizer;
     private TextToSpeech tts;
     private LocationManager locationManager;
@@ -119,16 +128,23 @@ public class MainActivity extends Activity implements LocationListener {
         assistant = label("Diga para onde deseja ir ou toque no microfone.", 18, white); assistant.setBackgroundColor(gray); assistant.setPadding(22,22,22,22); root.addView(assistant, matchWrap());
         listening = label("Microfone pronto", 14, beige); listening.setPadding(0,14,0,8); root.addView(listening, matchWrap());
         if (!external) {
-            destination = new EditText(this); destination.setHint("Destino em poucas palavras"); destination.setTextColor(white); destination.setHintTextColor(Color.LTGRAY); destination.setBackgroundColor(gray); destination.setPadding(18,16,18,16); root.addView(destination, matchWrap());
-            Button mic = button("🎙  Falar com o copiloto"); mic.setOnClickListener(v -> startListening()); root.addView(mic, matchWrap());
-            Button maps = button("Abrir no Google Maps"); maps.setOnClickListener(v -> openMaps(false)); root.addView(maps, matchWrap());
-            Button waze = button("Abrir no Waze"); waze.setOnClickListener(v -> openMaps(true)); root.addView(waze, matchWrap());
+            TextView destinationTitle = label("PARA ONDE VOCÊ VAI?", 12, beige); destinationTitle.setLetterSpacing(.12f); destinationTitle.setPadding(0,dp(22),0,dp(8)); root.addView(destinationTitle, matchWrap());
+            destination = new EditText(this); destination.setHint("Ex.: UEFS, Amélio Amorim ou Feira X"); destination.setTextColor(white); destination.setHintTextColor(Color.LTGRAY); destination.setBackground(rounded(gray,18)); destination.setPadding(dp(18),dp(16),dp(18),dp(16)); destination.setSingleLine(true); destination.setImeOptions(EditorInfo.IME_ACTION_SEARCH); root.addView(destination, matchWrap());
+            addressSuggestion = label("Digite ao menos 3 letras para conferir o endereço.", 13, Color.LTGRAY); addressSuggestion.setPadding(dp(8),dp(8),dp(8),dp(4)); root.addView(addressSuggestion, matchWrap());
+            addressSuggestion.setOnClickListener(v -> { Object value=v.getTag(); if(value instanceof String) destination.setText((String)value); });
+            destination.addTextChangedListener(new TextWatcher() { public void beforeTextChanged(CharSequence s,int a,int b,int c){} public void onTextChanged(CharSequence s,int a,int b,int c){ scheduleAddressSuggestion(s.toString()); } public void afterTextChanged(Editable e){} });
+            destination.setOnEditorActionListener((v, action, event) -> { if(action==EditorInfo.IME_ACTION_SEARCH){ openMaps(false); return true; } return false; });
+            Button go = button("Iniciar rota no Google Maps  →"); go.setOnClickListener(v -> openMaps(false)); root.addView(go, matchWrap());
+            LinearLayout alternatives = new LinearLayout(this); alternatives.setOrientation(LinearLayout.HORIZONTAL); alternatives.setPadding(0,dp(4),0,0);
+            micButton = secondaryButton("🎙  Falar destino"); micButton.setOnClickListener(v -> startListening()); alternatives.addView(micButton, new LinearLayout.LayoutParams(0,dp(54),1));
+            Button waze = secondaryButton("Abrir no Waze"); waze.setOnClickListener(v -> openMaps(true)); LinearLayout.LayoutParams wazeParams=new LinearLayout.LayoutParams(0,dp(54),1); wazeParams.setMargins(dp(8),0,0,0); alternatives.addView(waze,wazeParams); root.addView(alternatives, matchWrap());
         }
         return root;
     }
 
     private TextView label(String text, int size, int color) { TextView v = new TextView(this); v.setText(text); v.setTextSize(size); v.setTextColor(color); v.setFontFeatureSettings("kern"); return v; }
     private Button button(String text) { Button b = new Button(this); b.setText(text); b.setTextSize(17); b.setTextColor(black); b.setBackground(rounded(beige,18)); b.setAllCaps(false); LinearLayout.LayoutParams p=matchWrap(); p.setMargins(0,dp(12),0,0); b.setLayoutParams(p); return b; }
+    private Button secondaryButton(String text) { Button b=new Button(this); b.setText(text); b.setTextSize(14); b.setTextColor(white); b.setBackground(rounded(gray,18)); b.setAllCaps(false); return b; }
     private LinearLayout.LayoutParams matchWrap() { return new LinearLayout.LayoutParams(-1,-2); }
     private GradientDrawable rounded(int color, int radiusDp) { GradientDrawable value=new GradientDrawable(); value.setColor(color); value.setCornerRadius(dp(radiusDp)); return value; }
     private int dp(int value) { return Math.round(value * getResources().getDisplayMetrics().density); }
@@ -147,14 +163,30 @@ public class MainActivity extends Activity implements LocationListener {
         tts = new TextToSpeech(this, status -> { if(status==TextToSpeech.SUCCESS) tts.setLanguage(new Locale("pt","BR")); });
         recognizer = SpeechRecognizer.createSpeechRecognizer(this);
         recognizer.setRecognitionListener(new RecognitionListener() {
-            public void onReadyForSpeech(Bundle b){ listening.setText("Ouvindo..."); }
-            public void onResults(Bundle b){ ArrayList<String> r=b.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION); if(r!=null&&!r.isEmpty()) handleSpeech(r.get(0)); listening.setText("Microfone pronto"); }
-            public void onError(int e){ listening.setText("Toque para tentar novamente"); }
+            public void onReadyForSpeech(Bundle b){ listening.setText("● Ouvindo agora — diga somente o destino"); listening.setTextColor(Color.rgb(120,220,160)); if(micButton!=null){ micButton.setText("● Ouvindo..."); micButton.setTextColor(black); micButton.setBackground(rounded(beige,18)); } }
+            public void onResults(Bundle b){ ArrayList<String> r=b.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION); if(r!=null&&!r.isEmpty()) handleSpeech(r.get(0)); listening.setText("Microfone pronto"); listening.setTextColor(beige); resetMicButton(); }
+            public void onError(int e){ listening.setText("Não consegui ouvir. Toque para tentar novamente."); listening.setTextColor(Color.rgb(230,170,150)); resetMicButton(); }
             public void onBeginningOfSpeech(){} public void onRmsChanged(float v){} public void onBufferReceived(byte[] b){} public void onEndOfSpeech(){} public void onPartialResults(Bundle b){} public void onEvent(int t,Bundle b){}
         });
     }
 
-    private void startListening() { Intent i=new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH); i.putExtra(RecognizerIntent.EXTRA_LANGUAGE,"pt-BR"); i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,RecognizerIntent.LANGUAGE_MODEL_FREE_FORM); i.putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE,true); recognizer.startListening(i); }
+    private void resetMicButton(){ if(micButton!=null){ micButton.setText("🎙  Falar destino"); micButton.setTextColor(white); micButton.setBackground(rounded(gray,18)); } }
+    private void startListening() { if(recognizer==null){ Toast.makeText(this,"Microfone ainda está iniciando",Toast.LENGTH_SHORT).show(); return; } Intent i=new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH); i.putExtra(RecognizerIntent.EXTRA_LANGUAGE,"pt-BR"); i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,RecognizerIntent.LANGUAGE_MODEL_FREE_FORM); i.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS,true); try{ recognizer.startListening(i); }catch(Exception e){ listening.setText("Não foi possível iniciar o microfone."); resetMicButton(); } }
+
+    private void scheduleAddressSuggestion(String query) {
+        if(addressSuggestion==null) return;
+        if(pendingAddressLookup!=null) uiHandler.removeCallbacks(pendingAddressLookup);
+        String clean=query.trim(); addressSuggestion.setTag(null);
+        if(clean.length()<3){ addressSuggestion.setText("Digite ao menos 3 letras para conferir o endereço."); return; }
+        addressSuggestion.setText("Verificando endereço provável…");
+        pendingAddressLookup=() -> new Thread(() -> {
+            String result=null;
+            try { List<Address> found=new Geocoder(this,new Locale("pt","BR")).getFromLocationName(clean+", Bahia, Brasil",3); if(found!=null&&!found.isEmpty()) result=found.get(0).getAddressLine(0); } catch(Exception ignored) {}
+            String finalResult=result;
+            uiHandler.post(() -> { if(destination!=null && destination.getText().toString().trim().equals(clean)){ if(finalResult!=null){ addressSuggestion.setText("Endereço provável: "+finalResult+"\nToque aqui para usar"); addressSuggestion.setTextColor(beige); addressSuggestion.setTag(finalResult); } else { addressSuggestion.setText("Não confirmei o endereço. O Maps mostrará opções antes de navegar."); addressSuggestion.setTextColor(Color.LTGRAY); } } });
+        }).start();
+        uiHandler.postDelayed(pendingAddressLookup,550);
+    }
 
     private void ensureOverlayPermission() {
         if (!Settings.canDrawOverlays(this)) {
@@ -180,9 +212,10 @@ public class MainActivity extends Activity implements LocationListener {
     private void handleSpeech(String phrase) {
         String lower=phrase.toLowerCase(Locale.ROOT); assistant.setText("Você: "+phrase);
         String target=phrase.replaceFirst("(?i).*(me leve|ir|rota|navegar|destino|até|para)\\s+(para\\s+)?","").trim();
-        if(!target.equals(phrase)&&target.length()>2){ destination.setText(target); reply("Encontrei o destino "+target+". Escolha Maps ou Waze para iniciar."); }
+        if(!target.equals(phrase)&&target.length()>2){ destination.setText(target); reply("Destino preenchido: "+target+". Toque em iniciar rota no Google Maps."); }
         else if(lower.contains("velocidade")){ reply("Sua velocidade indicada é "+speed.getText()+"."); }
-        else { reply("Eu ouvi: "+phrase+". A conversa inteligente será conectada na próxima etapa."); }
+        else if(phrase.trim().length()>2){ destination.setText(phrase.trim()); reply("Destino preenchido: "+phrase.trim()+". Confira o endereço sugerido e toque em iniciar rota."); }
+        else { reply("Não entendi o destino. Tente dizer apenas o nome do lugar."); }
     }
     private void reply(String text){ assistant.setText(text); tts.speak(text,TextToSpeech.QUEUE_FLUSH,null,"assistant"); }
 
