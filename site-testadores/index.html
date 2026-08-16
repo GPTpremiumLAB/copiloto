@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Programa de Testes — Copiloto</title>
+  <style>
+    *{box-sizing:border-box}body{margin:0;background:#111;color:#f6f3ec;font-family:Arial,sans-serif}.wrap{width:min(760px,calc(100% - 32px));margin:40px auto 80px}.tag{color:#d8c7a5;letter-spacing:.08em;font-size:clamp(34px,9vw,68px);line-height:.92;font-weight:800}.hero{padding:34px;border:1px solid #5b574f;border-radius:24px;background:linear-gradient(145deg,#292929,#171717)}h1{font-size:clamp(24px,5vw,40px);line-height:1.05;margin:22px 0 12px}p{color:#d5d2ca;line-height:1.55}.card{margin-top:20px;padding:26px;background:#eee7da;color:#171717;border-radius:20px}label{display:block;margin:17px 0 7px;font-weight:700}input,select,textarea{width:100%;padding:13px;border:1px solid #9c9587;border-radius:10px;background:#fff;font:inherit}textarea{min-height:90px;resize:vertical}.checks label{font-weight:400;margin:10px 0}.checks input{width:auto;margin-right:8px}.safe{padding:14px;border-left:4px solid #9d8058;background:#fff9ef;margin:20px 0}button{width:100%;padding:15px;border:0;border-radius:12px;background:#171717;color:#fff;font:inherit;font-weight:700;cursor:pointer}.small{font-size:13px;color:#666}.report{margin-top:20px;padding:22px;border:1px solid #5b574f;border-radius:18px}a{color:#d8c7a5}[hidden]{display:none}
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <section class="hero">
+      <div class="tag">PROGRAMA<br>DE TESTES</div>
+      <h1>Ajude a aperfeiçoar esse app de viagens.</h1>
+      <p>Estamos selecionando pessoas para testar o <strong>Copiloto</strong>, um copiloto de voz para viagens de carro e moto, integrado ao Google Maps e ao Waze.</p>
+    </section>
+    <form class="card" id="testerForm">
+      <h2>Quero participar</h2>
+      <label for="name">Nome</label><input id="name" required>
+      <label for="username">Nome de usuário desejado</label><input id="username" required autocomplete="off">
+      <label for="contact">E-mail</label><input id="contact" type="email" required>
+      <label for="device">Onde pretende testar?</label><select id="device"><option value="Celular">Celular</option><option value="PC">PC</option></select>
+      <label for="model" id="modelLabel">Modelo do celular</label><input id="model" required placeholder="Ex.: Samsung Galaxy A54">
+      <div id="androidGroup"><label for="android">Versão do Android</label><input id="android" placeholder="Ex.: Android 14"></div>
+      <label for="maps">Aplicativo de navegação</label><select id="maps"><option>Google Maps</option><option>Waze</option><option>Uso os dois</option></select>
+      <div class="checks">
+        <label><input id="headset" type="checkbox"> Uso fone Bluetooth durante a viagem</label>
+        <label><input id="display" type="checkbox"> Possuo tela externa ou central compatível</label>
+        <label><input id="report" type="checkbox" required> Aceito enviar um relatório após o teste</label>
+      </div>
+      <label for="availability">Em qual data posso testar?</label><input id="availability" type="date" required>
+      <label for="notes">Observações</label><textarea id="notes"></textarea>
+      <div class="safe"><strong>Proteção:</strong> nunca informe sua senha pessoal. Cada pessoa aprovada receberá uma credencial temporária exclusiva.</div>
+      <button type="submit">Enviar inscrição</button>
+      <p class="small">O botão abre seu aplicativo de e-mail com a inscrição preenchida. Revise antes de enviar.</p>
+    </form>
+    <section class="report">
+      <h2>Depois do teste</h2>
+      <p>O relatório deve explicar o que funcionou, falhas encontradas, qualidade da conversa e da voz, consumo de bateria e funcionamento com GPS, fone e aplicativos de mapa.</p>
+      <p>Configure o aplicativo somente com o veículo parado em local seguro.</p>
+    </section>
+  </main>
+  <script>
+    device.addEventListener('change', () => {
+      const mobile = device.value === 'Celular';
+      modelLabel.textContent = mobile ? 'Modelo do celular' : 'Modelo ou configuração do PC';
+      model.placeholder = mobile ? 'Ex.: Samsung Galaxy A54' : 'Ex.: notebook Dell, Windows 11';
+      androidGroup.hidden = !mobile;
+    });
+    testerForm.addEventListener('submit', event => {
+      event.preventDefault();
+      const value = id => document.getElementById(id).value.trim();
+      const yes = id => document.getElementById(id).checked ? 'Sim' : 'Não';
+      const subject = `Inscrição para teste - ${value('name')}`;
+      const body = ['INSCRIÇÃO — COPILOTO','',`Nome: ${value('name')}`,`Usuário desejado: ${value('username')}`,`E-mail: ${value('contact')}`,`Dispositivo: ${value('device')}`,`Modelo: ${value('model')}`,`Android: ${value('device') === 'Celular' ? (value('android') || 'Não informado') : 'Não se aplica'}`,`Navegação: ${value('maps')}`,`Fone Bluetooth: ${yes('headset')}`,`Tela externa: ${yes('display')}`,`Aceita enviar relatório: ${yes('report')}`,`Disponibilidade: ${value('availability')}`,`Observações: ${value('notes') || 'Nenhuma'}`].join('\n');
+      location.href = `mailto:jaozin0154x@gmail.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    });
+  </script>
+</body>
+</html>
